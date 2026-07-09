@@ -1,0 +1,554 @@
+plugins {
+    id 'fabric-loom' version '1.17.13'
+    id 'java'
+}
+
+group = 'com.iisviewer'
+version = '1.0.0'
+
+base {
+    archivesName = 'IISViewer'
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.fabricmc.net/' }
+}
+
+dependencies {
+    minecraft 'com.mojang:minecraft:1.21.4'
+    mappings 'net.fabricmc:yarn:1.21.4+build.1:v2'
+    modImplementation 'net.fabricmc:fabric-loader:0.16.9'
+    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.111.0+1.21.4'
+}
+
+tasks.named('remapJar') { enabled = false }
+tasks.named('remapSourcesJar') { enabled = false }
+
+processResources {
+    def version = project.version
+    inputs.property 'version', version
+    filesMatching('fabric.mod.json') { expand 'version': version }
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+}
+
+// ──────────────────────────────────────────────────────────────
+// Post-process JAR: rename class references for Minecraft 26.2
+// ──────────────────────────────────────────────────────────────
+tasks.register('remapFor26_2') {
+    dependsOn tasks.named('jar')
+    doLast {
+        def jarDir = file('Jar')
+        jarDir.mkdirs()
+
+        def devDir = file('build/devlibs')
+        def source = devDir.listFiles()?.find { f ->
+            f.name.endsWith('.jar') && !f.name.contains('sources') && !f.name.contains('javadoc')
+        }
+        if (source == null || !source.exists()) {
+            logger.warn('[26.2] Not found in build/devlibs/')
+            return
+        }
+
+        def jarName = "IISViewer-${project.version}.jar"
+        def output = new File(jarDir, jarName)
+
+        jarDir.listFiles()?.each { f ->
+            if (f.name.endsWith('.jar') && f.delete()) {
+                logger.lifecycle("[26.2] Removed old: ${f.name}")
+            }
+        }
+
+        def renames = [
+            // KeyBinding → KeyMapping (Yarn→Mojang)
+            'net/minecraft/client/option/KeyBinding': 'net/minecraft/client/KeyMapping',
+            'net/minecraft/client/util/InputUtil': 'com/mojang/blaze3d/platform/InputConstants',
+            'net/minecraft/client/util/InputUtil$Type': 'com/mojang/blaze3d/platform/InputConstants$Type',
+            'Lnet/minecraft/client/option/KeyBinding;': 'Lnet/minecraft/client/KeyMapping;',
+            'Lnet/minecraft/client/util/InputUtil;': 'Lcom/mojang/blaze3d/platform/InputConstants;',
+            'Lnet/minecraft/client/util/InputUtil$Type;': 'Lcom/mojang/blaze3d/platform/InputConstants$Type;',
+            '(Ljava/lang/String;Lnet/minecraft/client/util/InputUtil$Type;ILjava/lang/String;)V':
+                '(Ljava/lang/String;Lcom/mojang/blaze3d/platform/InputConstants$Type;ILjava/lang/String;)V',
+            '(Lnet/minecraft/client/option/KeyBinding;)Lnet/minecraft/client/option/KeyBinding;':
+                '(Lnet/minecraft/client/KeyMapping;)Lnet/minecraft/client/KeyMapping;',
+            '()Lnet/minecraft/client/option/KeyBinding;': '()Lnet/minecraft/client/KeyMapping;',
+
+            // MinecraftClient → Minecraft
+            'net/minecraft/client/MinecraftClient': 'net/minecraft/client/Minecraft',
+            'Lnet/minecraft/client/MinecraftClient;': 'Lnet/minecraft/client/Minecraft;',
+            '(Lnet/minecraft/client/MinecraftClient;)V': '(Lnet/minecraft/client/Minecraft;)V',
+            '()Lnet/minecraft/client/MinecraftClient;': '()Lnet/minecraft/client/Minecraft;',
+
+            // wasPressed → consumeClick
+            'wasPressed': 'consumeClick',
+
+            // InGameHud → Hud (gui/hud/ → gui/)
+            'Lnet/minecraft/client/gui/hud/InGameHud;': 'Lnet/minecraft/client/gui/Hud;',
+            'net/minecraft/client/gui/hud/InGameHud': 'net/minecraft/client/gui/Hud',
+
+            // DrawContext → GuiGraphicsExtractor
+            'Lnet/minecraft/client/gui/DrawContext;': 'Lnet/minecraft/client/gui/GuiGraphicsExtractor;',
+            'net/minecraft/client/gui/DrawContext': 'net/minecraft/client/gui/GuiGraphicsExtractor',
+
+            // RenderTickCounter → DeltaTracker
+            'Lnet/minecraft/client/render/RenderTickCounter;': 'Lnet/minecraft/client/DeltaTracker;',
+            'net/minecraft/client/render/RenderTickCounter': 'net/minecraft/client/DeltaTracker',
+
+            // TextRenderer → Font
+            'Lnet/minecraft/client/font/TextRenderer;': 'Lnet/minecraft/client/gui/Font;',
+            'net/minecraft/client/font/TextRenderer': 'net/minecraft/client/gui/Font',
+
+            // textRenderer → font (field)
+            'textRenderer': 'font',
+
+            // Window class: net/minecraft/client/util/Window → com/mojang/blaze3d/platform/Window
+            'Lnet/minecraft/client/util/Window;': 'Lcom/mojang/blaze3d/platform/Window;',
+            'net/minecraft/client/util/Window': 'com/mojang/blaze3d/platform/Window',
+
+            // ClientPlayerEntity → LocalPlayer
+            'Lnet/minecraft/client/network/ClientPlayerEntity;': 'Lnet/minecraft/client/player/LocalPlayer;',
+            'net/minecraft/client/network/ClientPlayerEntity': 'net/minecraft/client/player/LocalPlayer',
+
+            // Window method renames
+            'getScaledWidth': 'getGuiScaledWidth',
+            'getScaledHeight': 'getGuiScaledHeight',
+
+            // Full descriptor for getWindow() return type
+            '()Lnet/minecraft/client/util/Window;': '()Lcom/mojang/blaze3d/platform/Window;',
+
+            // Mixin @Inject method descriptors
+            'render(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/client/render/RenderTickCounter;)V':
+                'extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/client/DeltaTracker;)V',
+            '(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/client/render/RenderTickCounter;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V':
+                '(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/client/DeltaTracker;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V',
+
+            // drawItemWithoutEntity → item (same void return type)
+            'drawItemWithoutEntity': 'item',
+
+            // extractSlot (Mojang-only method, used via reflection)
+            'extractSlot': 'extractSlot',
+            // InGameHud → Hud (for reflection Class.forName)
+            'net/minecraft/client/gui/hud/InGameHud': 'net/minecraft/client/gui/Hud',
+            'Lnet/minecraft/client/gui/hud/InGameHud;': 'Lnet/minecraft/client/gui/Hud;',
+
+            // Full descriptors containing DrawContext
+            '(Lnet/minecraft/client/gui/DrawContext;)V':
+                '(Lnet/minecraft/client/gui/GuiGraphicsExtractor;)V',
+            '(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/client/font/TextRenderer;IILnet/minecraft/item/ItemStack;)V':
+                '(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/client/gui/Font;IILnet/minecraft/item/ItemStack;)V',
+
+            // drawText → text (int→void return type, handled by ASM post-process)
+            'drawText': 'text',
+            '(Lnet/minecraft/client/font/TextRenderer;Ljava/lang/String;IIIZ)I':
+                '(Lnet/minecraft/client/gui/Font;Ljava/lang/String;IIIZ)V',
+
+            // ─── Yarn→Mojang class path renames ───
+
+            // ItemStack: net/minecraft/item → net/minecraft/world/item
+            'Lnet/minecraft/item/ItemStack;': 'Lnet/minecraft/world/item/ItemStack;',
+            'net/minecraft/item/ItemStack': 'net/minecraft/world/item/ItemStack',
+
+            // EquipmentSlot: net/minecraft/entity → net/minecraft/world/entity
+            'Lnet/minecraft/entity/EquipmentSlot;': 'Lnet/minecraft/world/entity/EquipmentSlot;',
+            'net/minecraft/entity/EquipmentSlot': 'net/minecraft/world/entity/EquipmentSlot',
+
+            // Arm → HumanoidArm: net/minecraft/util → net/minecraft/world/entity
+            'Lnet/minecraft/util/Arm;': 'Lnet/minecraft/world/entity/HumanoidArm;',
+            'net/minecraft/util/Arm': 'net/minecraft/world/entity/HumanoidArm',
+
+            // NbtCompound → CompoundTag
+            'Lnet/minecraft/nbt/NbtCompound;': 'Lnet/minecraft/nbt/CompoundTag;',
+            'net/minecraft/nbt/NbtCompound': 'net/minecraft/nbt/CompoundTag',
+
+            // ItemConvertible → Item (interface)
+            'Lnet/minecraft/item/ItemConvertible;': 'Lnet/minecraft/world/item/Item;',
+            'net/minecraft/item/ItemConvertible': 'net/minecraft/world/item/Item',
+
+            // DataComponentTypes → DataComponents (component→core/component)
+            'Lnet/minecraft/component/DataComponentTypes;': 'Lnet/minecraft/core/component/DataComponents;',
+            'net/minecraft/component/DataComponentTypes': 'net/minecraft/core/component/DataComponents',
+
+            // ComponentType → core/component/ComponentType (used in field signatures)
+            'Lnet/minecraft/component/ComponentType;': 'Lnet/minecraft/core/component/ComponentType;',
+            'net/minecraft/component/ComponentType': 'net/minecraft/core/component/ComponentType',
+
+            // Component → core/component/Component (base interface)
+            'Lnet/minecraft/component/Component;': 'Lnet/minecraft/core/component/Component;',
+            'net/minecraft/component/Component': 'net/minecraft/core/component/Component',
+
+            // NbtComponent → CustomData (component type → world/item/component)
+            'Lnet/minecraft/component/type/NbtComponent;': 'Lnet/minecraft/world/item/component/CustomData;',
+            'net/minecraft/component/type/NbtComponent': 'net/minecraft/world/item/component/CustomData',
+            // Full descriptor for copyNbt()→copyTag() return type
+            '()Lnet/minecraft/nbt/NbtCompound;': '()Lnet/minecraft/nbt/CompoundTag;',
+
+            // ─── Yarn→Mojang method name renames ───
+
+            // getEquippedStack → getItemBySlot (LivingEntity)
+            'getEquippedStack': 'getItemBySlot',
+            // getMainHandStack → getMainHandItem
+            'getMainHandStack': 'getMainHandItem',
+            // getOffHandStack → getOffhandItem
+            'getOffHandStack': 'getOffhandItem',
+            // copyNbt → copyTag (NbtComponent → CustomData)
+            'copyNbt': 'copyTag',
+
+            // Text → Component (net/minecraft/text → net/minecraft/network/chat)
+            'Lnet/minecraft/text/Text;': 'Lnet/minecraft/network/chat/Component;',
+            'net/minecraft/text/Text': 'net/minecraft/network/chat/Component',
+            // literal → literal (Text.literal → Component.literal)
+            'Text.literal': 'Component.literal',
+
+            // getWidth → width (Font/TextRenderer)
+            'getWidth': 'width',
+
+            // sendMessage → (keep as-is, handled by try-catch in tick handler)
+        ]
+
+        def renamedClassCount = 0
+
+        new java.util.jar.JarFile(source).withCloseable { jarFile ->
+            new java.util.jar.JarOutputStream(new java.io.FileOutputStream(output)).withCloseable { jos ->
+                def entries = jarFile.entries()
+                while (entries.hasMoreElements()) {
+                    def entry = entries.nextElement()
+                    def data = jarFile.getInputStream(entry).readAllBytes()
+
+                    if (entry.name.endsWith('.class')) {
+                        byte[] processed = renameUtf8Constants(data, renames)
+                        if (processed != data) {
+                            renamedClassCount++
+                            logger.lifecycle("[26.2] Remapped: ${entry.name}")
+                        }
+                        // Post-process: remove pop after void-returning method calls (drawText→text)
+                        try {
+                            processed = removePopsAfterVoidCalls(processed)
+                        } catch (Exception e) {
+                            logger.warn('[26.2] ASM post-process failed for {}: {}', entry.name, e.message)
+                        }
+                        def newEntry = new java.util.jar.JarEntry(entry.name)
+                        newEntry.time = entry.time
+                        jos.putNextEntry(newEntry)
+                        jos.write(processed)
+                        jos.closeEntry()
+                    } else {
+                        jos.putNextEntry(new java.util.jar.JarEntry(entry.name))
+                        jos.write(data)
+                        jos.closeEntry()
+                    }
+                }
+            }
+        }
+
+        if (renamedClassCount > 0) {
+            logger.lifecycle("[26.2] Remapped ${renamedClassCount} class files for Minecraft 26.2")
+        } else {
+            logger.warn('[26.2] No class files were renamed!')
+        }
+        logger.lifecycle("[26.2] Output: ${output.absolutePath}")
+    }
+}
+
+tasks.named('build') { finalizedBy tasks.named('remapFor26_2') }
+
+// ──────────────────────────────────────────────────────────────
+// Run Minecraft 26.2 with Fabric Loader 0.19.3
+// ──────────────────────────────────────────────────────────────
+tasks.register('run26_2', JavaExec) {
+    dependsOn tasks.named('remapFor26_2')
+
+    description = 'Launch Minecraft 26.2 with Fabric Loader 0.19.3'
+    group = 'minecraft'
+
+    mainClass = 'net.fabricmc.loader.impl.launch.knot.KnotClient'
+    jvmArgs '-DFabricMcEmu= net.minecraft.client.main.Main '
+
+    def userHome = System.getProperty('user.home')
+    def mcDir = file("${userHome}/AppData/Roaming/.minecraft")
+    def libsDir = new File(mcDir, 'libraries')
+    def versionDir = new File(mcDir, 'versions/26.2')
+    def versionJson = new File(versionDir, '26.2.json')
+    def clientJar = new File(versionDir, '26.2.jar')
+    def modJar = file("Jar/IISViewer-${project.version}.jar")
+
+    if (!clientJar.exists()) {
+        throw new GradleException("26.2 client jar not found at ${clientJar}")
+    }
+    if (!modJar.exists()) {
+        throw new GradleException("Mod jar not found at ${modJar} - run build first")
+    }
+
+    Closure<File> resolveLib = { String coord ->
+        def parts = coord.split(':')
+        def group = parts[0].replace('.', '/')
+        def artifact = parts[1]
+        def version = parts[2]
+        def classifier = parts.length > 3 ? "-${parts[3]}" : ''
+        def jarName = "${artifact}-${version}${classifier}.jar"
+        return new File(libsDir, "${group}/${artifact}/${version}/${jarName}")
+    }
+
+    def jsonSlurper = new groovy.json.JsonSlurper()
+    def json = jsonSlurper.parse(versionJson)
+
+    def classpathFiles = []
+    def nativeDirs = []
+
+    classpathFiles.add(clientJar)
+
+    json.libraries.each { lib ->
+        def name = lib.name
+        def rules = lib.rules
+        if (rules != null) {
+            def allowed = false
+            rules.each { rule ->
+                if (rule.action == 'allow') {
+                    if (rule.os == null) { allowed = true
+                    } else if (rule.os.name == 'windows' || rule.os.name == 'osx' || rule.os.name == 'linux') {
+                        if (rule.os.name == 'windows') { allowed = true }
+                    } else if (rule.os.name == null) { allowed = true }
+                } else if (rule.action == 'disallow') {
+                    if (rule.os?.name == 'windows') { allowed = false }
+                }
+            }
+            if (!allowed) return
+        }
+        if (name.contains(':natives-')) {
+            def jarFile = resolveLib(name)
+            if (jarFile.exists()) {
+                def extractDir = new File(file('build/natives/26_2'), jarFile.name.replace('.jar', ''))
+                if (!extractDir.exists()) {
+                    extractDir.mkdirs()
+                    try (def jf = new java.util.jar.JarFile(jarFile)) {
+                        jf.entries().each { entry ->
+                            if (!entry.directory) {
+                                def outFile = new File(extractDir, entry.name)
+                                outFile.parentFile.mkdirs()
+                                outFile.bytes = jf.getInputStream(entry).readAllBytes()
+                            }
+                        }
+                    }
+                }
+                nativeDirs.add(extractDir.absolutePath)
+            }
+            return
+        }
+        def jarFile = resolveLib(name)
+        if (jarFile.exists()) { classpathFiles.add(jarFile)
+        } else { logger.warn('[26.2] Library not found: {}', jarFile) }
+    }
+
+    // Fabric Loader and its dependencies
+    ['org.ow2.asm:asm:9.10.1', 'org.ow2.asm:asm-analysis:9.10.1',
+     'org.ow2.asm:asm-commons:9.10.1', 'org.ow2.asm:asm-tree:9.10.1',
+     'org.ow2.asm:asm-util:9.10.1', 'net.fabricmc:sponge-mixin:0.17.3+mixin.0.8.7',
+     'net.fabricmc:fabric-loader:0.19.3'].each { coord ->
+        def f = resolveLib(coord)
+        if (f.exists()) { classpathFiles.add(f) }
+        else { logger.warn('[26.2] Fabric lib not found: {}', f) }
+    }
+
+    classpath = files(classpathFiles)
+
+    // JVM arguments from version JSON
+    def winJvmArgs = []
+    json.arguments?.jvm?.each { arg ->
+        Closure addArg = { String val ->
+            if (val.contains('${')) return
+            if (val == '-cp') return
+            winJvmArgs.add(val)
+        }
+        if (arg instanceof String) { addArg(arg)
+        } else if (arg instanceof Map && arg.rules) {
+            def allowed = arg.rules.any { it.action == 'allow' && (it.os == null || it.os.name == 'windows') }
+            if (allowed) {
+                if (arg.value instanceof String) { addArg(arg.value)
+                } else if (arg.value instanceof List) { arg.value.each { addArg(it) } }
+            }
+        }
+    }
+    winJvmArgs.each { jvmArgs(it) }
+
+    if (nativeDirs) { jvmArgs "-Djava.library.path=${nativeDirs.join(File.pathSeparator)}" }
+
+    args '--username', 'rizer001'
+    args '--uuid', '00000000-0000-0000-0000-000000000000'
+    args '--accessToken', '0'
+    args '--clientId', 'Codebuff'
+    args '--xuid', '0'
+    args '--version', '26.2'
+    args '--gameDir', mcDir.absolutePath
+    args '--assetsDir', new File(mcDir, 'assets').absolutePath
+    args '--assetIndex', json.assets ?: '31'
+    args '--userProperties', '{}'
+    args '--versionType', 'release'
+    args '--quickPlayPath', new File(mcDir, 'quickPlay').absolutePath
+    args '--quickPlayMultiplayer', 'oakworld.giize.com:25565'
+
+    executable = new File('C:/Program Files/Java/jdk-26/bin/java.exe')
+    jvmArgs '-Xms1G', '-Xmx4G'
+    workingDir = mcDir
+
+    if (json.logging?.client?.argument) {
+        def logConfigUrl = json.logging.client.file.url
+        def logConfigFile = new File(temporaryDir, 'log4j.xml')
+        if (!logConfigFile.exists()) {
+            logConfigFile.withOutputStream { out ->
+                out << new URL(logConfigUrl).openStream()
+            }
+        }
+        jvmArgs json.logging.client.argument.replace('${path}', logConfigFile.absolutePath)
+    }
+
+    doFirst {
+        def modsDir = new File(mcDir, 'mods')
+        modsDir.mkdirs()
+
+        // Clean ALL old fabric-api files from mods/
+        fileTree(modsDir).matching { include '*fabric-api*' }.each { f ->
+            f.delete()
+            logger.lifecycle('[26.2] Removed old Fabric API from mods/: {}', f.name)
+        }
+
+        // Extract only the Fabric API modules our mod needs from the combined jar
+        def combinedJar = resolveLib('net.fabricmc.fabric-api:fabric-api:0.145.4+26.2')
+        def KEEP_MODULES = ['fabric-api-base', 'fabric-key-mapping-api-v1', 'fabric-lifecycle-events-v1']
+
+        if (combinedJar.exists()) {
+            new java.util.jar.JarFile(combinedJar).withCloseable { jf ->
+                jf.entries().each { entry ->
+                    if (entry.name.startsWith('META-INF/jars/') && !entry.directory) {
+                        if (KEEP_MODULES.any { entry.name.contains(it) }) {
+                            def dest = new File(modsDir, entry.name.substring('META-INF/jars/'.length()))
+                            dest.bytes = jf.getInputStream(entry).readAllBytes()
+                            logger.lifecycle('[26.2] Extracted module: {}', dest.name)
+                        }
+                    }
+                }
+            }
+        } else {
+            logger.warn('[26.2] Fabric API combined jar not found!')
+        }
+
+        // Copy the mod JAR
+        def modsJar = new File(modsDir, modJar.name)
+        if (modJar.exists()) {
+            modsJar.bytes = modJar.bytes
+            logger.lifecycle('[26.2] Mod JAR copied to: {}', modsJar)
+        }
+
+        logger.lifecycle('[26.2] Launching Minecraft 26.2 with Fabric Loader 0.19.3')
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+// Constant pool Utf8 renaming
+// ──────────────────────────────────────────────────────────────
+static byte[] renameUtf8Constants(byte[] classBytes, Map<String, String> renames) {
+    def dis = new java.io.DataInputStream(new java.io.ByteArrayInputStream(classBytes))
+    def bos = new java.io.ByteArrayOutputStream(classBytes.length + 64)
+    def dos = new java.io.DataOutputStream(bos)
+    boolean modified = false
+    try {
+        dos.writeInt(dis.readInt())
+        dos.writeShort(dis.readUnsignedShort())
+        dos.writeShort(dis.readUnsignedShort())
+        int cpCount = dis.readUnsignedShort()
+        dos.writeShort(cpCount)
+
+        // Sort keys by length descending so longer patterns (Lnet/minecraft/...;) are tried before
+        // their shorter substrings (net/minecraft/...), preventing partial/incorrect replacements.
+        def sortedKeys = renames.keySet().sort { -it.length() }
+
+        for (int i = 1; i < cpCount; i++) {
+            int tag = dis.readUnsignedByte()
+            dos.writeByte(tag)
+            switch (tag) {
+                case 1:
+                    String val = dis.readUTF()
+                    String result = val
+                    for (String key : sortedKeys) {
+                        if (result.contains(key)) {
+                            result = result.replace(key, renames[key])
+                            modified = true
+                        }
+                    }
+                    dos.writeUTF(result)
+                    break
+                case 3: case 4: dos.writeInt(dis.readInt()); break
+                case 5: case 6: dos.writeLong(dis.readLong()); i++; break
+                case 7: case 8: case 16: case 19: case 20: dos.writeShort(dis.readUnsignedShort()); break
+                case 9: case 10: case 11: case 17: dos.writeShort(dis.readUnsignedShort()); dos.writeShort(dis.readUnsignedShort()); break
+                case 12: dos.writeShort(dis.readUnsignedShort()); dos.writeShort(dis.readUnsignedShort()); break
+                case 15: dos.writeByte(dis.readUnsignedByte()); dos.writeShort(dis.readUnsignedShort()); break
+                case 18: dos.writeShort(dis.readUnsignedShort()); dos.writeShort(dis.readUnsignedShort()); break
+                default: throw new RuntimeException("Unknown constant pool tag: ${tag}")
+            }
+        }
+        byte[] remaining = new byte[dis.available()]; dis.readFully(remaining); dos.write(remaining)
+    } finally { dis.close(); dos.close() }
+    return modified ? bos.toByteArray() : classBytes
+}
+
+// ──────────────────────────────────────────────────────────────
+// ASM post-process: remove POP after void-returning method calls
+// e.g. drawText(→text) changed return type I→V, so the POP
+// instruction after the invoke must be removed.
+// ──────────────────────────────────────────────────────────────
+static byte[] removePopsAfterVoidCalls(byte[] classBytes) {
+    try {
+        def cr = new org.objectweb.asm.ClassReader(classBytes)
+        def cn = new org.objectweb.asm.tree.ClassNode()
+        cr.accept(cn, 0)
+
+        boolean modified = false
+
+        for (def method : cn.methods) {
+            def insnList = method.instructions
+            if (insnList == null) continue
+
+            def toRemove = []
+            for (int i = 0; i < insnList.size() - 1; i++) {
+                def insn = insnList.get(i)
+                def nextInsn = insnList.get(i + 1)
+
+                // Only remove pop after method calls named 'text'
+                // (renamed from 'drawText', return type changed I→V)
+                if (insn instanceof org.objectweb.asm.tree.MethodInsnNode &&
+                    insn.name == 'text' &&
+                    nextInsn instanceof org.objectweb.asm.tree.InsnNode &&
+                    nextInsn.getOpcode() == org.objectweb.asm.Opcodes.POP) {
+                    toRemove.add(nextInsn)
+                    i++ // skip next in iteration
+                    modified = true
+                }
+            }
+
+            if (!toRemove.isEmpty()) {
+                for (def rm : toRemove) {
+                    insnList.remove(rm)
+                }
+            }
+        }
+
+        if (!modified) {
+            return classBytes
+        }
+
+        def cw = new org.objectweb.asm.ClassWriter(cr, 0)
+        cn.accept(cw)
+        return cw.toByteArray()
+    } catch (Exception e) {
+        System.err.println('[26.2] ASM pop-fix failed: ' + e.message)
+        return classBytes
+    }
+}

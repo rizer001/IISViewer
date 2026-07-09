@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "iisviewer",
+  "version": "${version}",
+  "name": "IISViewer",
+  "description": "Отображает целостность предметов (Item Integrity System) в HUD — слоты брони, правой и левой руки с HEX градиентом",
+  "authors": ["rizer001"],
+  "contact": {},
+  "license": "AGPL-3.0",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.iisviewer.IISViewerMod"]
+  },
+  "mixins": ["mixins.iisviewer.json"],
+  "depends": {
+    "fabricloader": ">=0.16.9",
+    "minecraft": ">=1.21.4"
+  }
+}

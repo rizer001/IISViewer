@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "package": "com.iisviewer.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "IISViewerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
