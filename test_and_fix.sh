@@ -49,7 +49,7 @@ for attempt in $(seq 1 $MAX_ATTEMPTS); do
     rm -rf build Jar 2>/dev/null
     ./gradlew build 2>&1 | tee "$BUILD_LOG" | grep -E "(FAILED|ERROR|BUILD|26\\.2)" || true
 
-    if [ ! -f "Jar/IISViewer-1.0.0.jar" ]; then
+    if [ ! -f "build/libs/IISViewer-1.0.0.jar" ]; then
         echo "✗ BUILD FAILED! Check $BUILD_LOG for details."
         grep -E "error:|Error|FAILED" "$BUILD_LOG" | head -20
         echo ""
@@ -58,12 +58,12 @@ for attempt in $(seq 1 $MAX_ATTEMPTS); do
         continue
     fi
 
-    JAR_SIZE=$(stat -c%s "Jar/IISViewer-1.0.0.jar" 2>/dev/null || echo "?")
-    echo "✓ Build OK: Jar/IISViewer-1.0.0.jar (${JAR_SIZE} bytes)"
+    JAR_SIZE=$(stat -c%s "build/libs/IISViewer-1.0.0.jar" 2>/dev/null || echo "?")
+    echo "✓ Build OK: build/libs/IISViewer-1.0.0.jar (${JAR_SIZE} bytes)"
 
     # ========== 2. DEPLOY ==========
     echo "▸ [2/5] Deploying to mods/..."
-    cp "Jar/IISViewer-1.0.0.jar" "$MODS_DIR/IISViewer-1.0.0.jar"
+    cp "build/libs/IISViewer-1.0.0.jar" "$MODS_DIR/IISViewer-1.0.0.jar"
     echo "✓ Deployed to $MODS_DIR/IISViewer-1.0.0.jar"
 
     # ========== 3. CLEAN STATE ==========
@@ -269,7 +269,7 @@ for attempt in $(seq 1 $MAX_ATTEMPTS); do
         echo "╚══════════════════════════════════════════════╝"
         echo ""
         echo "Attempts used: $attempt"
-        echo "Mod: Jar/IISViewer-1.0.0.jar ($JAR_SIZE bytes)"
+        echo "Mod: build/libs/IISViewer-1.0.0.jar ($JAR_SIZE bytes)"
         echo "Deployed to: $MODS_DIR/IISViewer-1.0.0.jar"
 
         # Show mod loading evidence from log

@@ -47,7 +47,7 @@ tasks.withType(JavaCompile).configureEach {
 tasks.register('remapFor26_2') {
     dependsOn tasks.named('jar')
     doLast {
-        def jarDir = file('Jar')
+        def jarDir = file('build/libs')
         jarDir.mkdirs()
 
         def devDir = file('build/devlibs')
@@ -278,7 +278,7 @@ tasks.register('run26_2', JavaExec) {
     def versionDir = new File(mcDir, 'versions/26.2')
     def versionJson = new File(versionDir, '26.2.json')
     def clientJar = new File(versionDir, '26.2.jar')
-    def modJar = file("Jar/IISViewer-${project.version}.jar")
+    def modJar = file("build/libs/IISViewer-${project.version}.jar")
 
     if (!clientJar.exists()) {
         throw new GradleException("26.2 client jar not found at ${clientJar}")
