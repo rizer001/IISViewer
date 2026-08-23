@@ -2,7 +2,7 @@
 
 ![Development status](https://img.shields.io/badge/status-Stable-green)
 
-**IISViewer** — a client-side Minecraft mod and add-on for [**UltimateImprovments**](https://github.com/rizer001/UltimateImprovments) that makes it easy to see the integrity of items.
+**IIS Viewer** — a client-side Minecraft mod and add-on for [**UltimateImprovments**](https://github.com/rizer001/UltimateImprovments) that makes it easy to see the integrity of items.
 
 ## Features
 
