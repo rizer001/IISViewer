@@ -1,4 +1,4 @@
-# IISViewer
+# Item Integrity System (IIS) Viewer
 
 ![Development status](https://img.shields.io/badge/status-Stable-green)
 
