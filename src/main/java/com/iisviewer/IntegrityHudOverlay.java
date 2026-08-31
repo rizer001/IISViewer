@@ -131,30 +131,34 @@ public class IntegrityHudOverlay {
     }
 
     /**
-     * Multi-stop gradient: White → Yellow → Orange → Red → Dark Red
-     * t=1.0: #FFFFFF (white)
-     * t=0.75: #FFFF00 (yellow)
-     * t=0.50: #FF8C00 (orange)
-     * t=0.25: #FF0000 (red)
-     * t=0.0:  #8B0000 (dark red)
+     * Interpolates between the high (100%) and low (0%) colors from ModConfig.
+     * Falls back to the hardcoded white→dark-red gradient if config colors are all zero.
      */
     private static int getGradientColor(double pct) {
         double t = Math.max(0.0, Math.min(1.0, pct / 100.0));
 
-        // Default to lowest stop
-        int r = (int) GRADIENT_STOPS[GRADIENT_STOPS.length - 1][1];
-        int g = (int) GRADIENT_STOPS[GRADIENT_STOPS.length - 1][2];
-        int b = (int) GRADIENT_STOPS[GRADIENT_STOPS.length - 1][3];
-
-        for (int i = 0; i < GRADIENT_STOPS.length - 1; i++) {
-            double tHigh = GRADIENT_STOPS[i][0];
-            double tLow = GRADIENT_STOPS[i + 1][0];
-            if (t <= tHigh && t >= tLow) {
-                double seg = (t - tLow) / (tHigh - tLow);
-                r = (int) Math.round(GRADIENT_STOPS[i + 1][1] + (GRADIENT_STOPS[i][1] - GRADIENT_STOPS[i + 1][1]) * seg);
-                g = (int) Math.round(GRADIENT_STOPS[i + 1][2] + (GRADIENT_STOPS[i][2] - GRADIENT_STOPS[i + 1][2]) * seg);
-                b = (int) Math.round(GRADIENT_STOPS[i + 1][3] + (GRADIENT_STOPS[i][3] - GRADIENT_STOPS[i + 1][3]) * seg);
-                break;
+        int r, g, b;
+        if (ModConfig.gradientRedHigh != 0 || ModConfig.gradientGreenHigh != 0 || ModConfig.gradientBlueHigh != 0
+                || ModConfig.gradientRedLow != 0 || ModConfig.gradientGreenLow != 0 || ModConfig.gradientBlueLow != 0) {
+            // Use user-configured gradient colors
+            r = (int) Math.round(ModConfig.gradientRedLow + (ModConfig.gradientRedHigh - ModConfig.gradientRedLow) * t);
+            g = (int) Math.round(ModConfig.gradientGreenLow + (ModConfig.gradientGreenHigh - ModConfig.gradientGreenLow) * t);
+            b = (int) Math.round(ModConfig.gradientBlueLow + (ModConfig.gradientBlueHigh - ModConfig.gradientBlueLow) * t);
+        } else {
+            // Fallback: multi-stop gradient White → Yellow → Orange → Red → Dark Red
+            r = (int) GRADIENT_STOPS[GRADIENT_STOPS.length - 1][1];
+            g = (int) GRADIENT_STOPS[GRADIENT_STOPS.length - 1][2];
+            b = (int) GRADIENT_STOPS[GRADIENT_STOPS.length - 1][3];
+            for (int i = 0; i < GRADIENT_STOPS.length - 1; i++) {
+                double tHigh = GRADIENT_STOPS[i][0];
+                double tLow = GRADIENT_STOPS[i + 1][0];
+                if (t <= tHigh && t >= tLow) {
+                    double seg = (t - tLow) / (tHigh - tLow);
+                    r = (int) Math.round(GRADIENT_STOPS[i + 1][1] + (GRADIENT_STOPS[i][1] - GRADIENT_STOPS[i + 1][1]) * seg);
+                    g = (int) Math.round(GRADIENT_STOPS[i + 1][2] + (GRADIENT_STOPS[i][2] - GRADIENT_STOPS[i + 1][2]) * seg);
+                    b = (int) Math.round(GRADIENT_STOPS[i + 1][3] + (GRADIENT_STOPS[i][3] - GRADIENT_STOPS[i + 1][3]) * seg);
+                    break;
+                }
             }
         }
 
